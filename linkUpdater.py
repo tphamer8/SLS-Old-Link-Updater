@@ -34,9 +34,14 @@ def process_rows(spreadsheet):
     rows = sheet.get_all_records()  # Fetch all rows
 
     for row in rows:
-        extract_old_pdfs = row['Extract Old PDFs']  # Get checkbox value
-        if extract_old_pdfs == 'TRUE':  # If checkbox is checked
+        if row['Extract Old PDFs'] == 'TRUE':  # If checkbox is checked
             post_title = row['post_title']
+            existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
+
+            if post_title in existing_tabs:
+                print(f"Tab already exists for {post_title}. Skipping.")
+                break  # Exit the loop if the tab already exists
+
             url = row['URL']
             print(f"Processing: {post_title}")
             
