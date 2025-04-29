@@ -1,12 +1,15 @@
+import os
+import time
+import requests
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
-import time
-import urllib.parse
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 # Authenticate with Google Sheets
@@ -21,78 +24,63 @@ def open_spreadsheet(client, spreadsheet_name):
     spreadsheet = client.open(spreadsheet_name)
     return spreadsheet
 
-# Process rows and add data to "Old files" sheet
-def process_rows(spreadsheet):
-    page_content = spreadsheet.worksheet('Page Content')  # First sheet
-    old_files = spreadsheet.worksheet('Old Files')  # Access "Old Files" sheet
-    rows = page_content.get_all_records()  # Fetch all rows
-
-    for row_idx, row in enumerate(rows, start=2):  # start=2 because Google Sheets is 1-indexed
-        if row['Extract Old PDFs'] == 'TRUE':  # If checkbox is checked
-            post_title = row['post_title']
-            url = row['URL']
-            processed = (row['Processed'] == 'Yes')
-
-            if processed:
-                print(f"{post_title} already processed.")
-                continue
-
-            print(f"Processing: {post_title}")
-            
-            # Update the "Processed" column (Column 8, which is column H)
-            page_content.update_cell(row_idx, 8, 'Yes')
-
-            # Add links to "Old files" sheet
-            old_file_links = get_old(url)
-            for old_link in old_file_links:
-                file_type = 'PDF' if old_link.endswith('.pdf') else 'Image'  # Identify type
-
-                # Append the row with clickable links
-                old_files.append_row([post_title, url, old_link, file_type, 'Pending'])
-
-
-# Find the file links with sites/default/files using Selenium
-def get_old(url):
-    # Set up Selenium options for headless browser
+# Create a Selenium WebDriver with headless options
+def create_selenium_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless")  # Headless mode (no UI)
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
+
+# Download the file using Selenium
+def download_file_selenium(url, save_path):
+    driver = create_selenium_driver()
     
-    # Load the page using Selenium
+    # Navigate to the URL
     driver.get(url)
     
-    # Wait for the page to load (you may want to adjust this for dynamic content)
+    # Wait for the page to load (adjust the wait time or conditions as necessary)
     time.sleep(3)
     
-    # Get the page source (HTML)
-    html = driver.page_source
-    driver.quit()  # Close the browser
-
-    # Parse the page with BeautifulSoup
-    soup = BeautifulSoup(html, 'html.parser')
-    links = []
-
-    # Find all the pdf links
-    for link in soup.find_all('a', href=True):
-        href = link['href']
-        # Filter by sites/default/files
-        if 'sites/default/files' in href:
-            full_link = f"https://law.stanford.edu/wp-content/uploads{href}"
-            links.append(full_link)
+    # If there's a button or a link to trigger the download, find and click it
+    # Example: If there's a download button on the page
+    try:
+        download_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@id="download_button_id"]'))  # Modify this with the correct XPATH
+        )
+        download_button.click()
+        
+        # Wait for the file to download (You can adjust this for specific timing or events)
+        time.sleep(5)  # Wait for download to complete
+        
+    except Exception as e:
+        print(f"Error while downloading the file: {e}")
     
-    # Find all resources with src (like images)
-    for tag in soup.find_all(src=True):
-        src = tag['src']
-        # Filter by sites/default/files
-        if 'sites/default/files' in src:
-            full_link = f"{src}"
-            links.append(full_link)
-    
-    return links
+    driver.quit()  # Close the browser after download
+
+# Process rows and download files
+def process_and_download_files(spreadsheet):
+    old_files = spreadsheet.worksheet('Old Files')  # Access "Old Files" sheet
+    rows = old_files.get_all_records()  # Fetch all rows
+
+    for row in rows:
+        url = row['URL']  # Get the file URL from the "Old Files" sheet
+        file_name = url.split("/")[-1]  # Get the file name from the URL (assuming it's the last part of the URL)
+        
+        # Specify where to save the downloaded file
+        save_path = os.path.join('downloads', file_name)
+
+        # Ensure the 'downloads' directory exists
+        if not os.path.exists('downloads'):
+            os.makedirs('downloads')
+
+        # Download the file using Selenium
+        download_file_selenium(url, save_path)
 
 # Main execution
 if __name__ == '__main__':
     client = authenticate_google_sheet()
     spreadsheet_name = 'Auto Old Link Updater'  # Replace with your spreadsheet name
     spreadsheet = open_spreadsheet(client, spreadsheet_name)
-    process_rows(spreadsheet)
+    process_and_download_files(spreadsheet)
