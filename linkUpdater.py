@@ -40,7 +40,7 @@ def process_rows(spreadsheet):
 
             if post_title in existing_tabs:
                 print(f"Tab already exists for {post_title}. Skipping.")
-                break  # Exit the loop if the tab already exists
+                continue  # Exit the loop if the tab already exists
 
             url = row['URL']
             print(f"Processing: {post_title}")
