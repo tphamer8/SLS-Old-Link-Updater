@@ -21,39 +21,37 @@ def open_spreadsheet(client, spreadsheet_name):
     spreadsheet = client.open(spreadsheet_name)
     return spreadsheet
 
-# Create new tab and initialize columns
-def create_new_tab(spreadsheet, post_title):
-    spreadsheet.add_worksheet(title=post_title, rows="100", cols="3")
-    new_sheet = spreadsheet.worksheet(post_title)
-    new_sheet.append_row(['Old Link', 'New Link', 'Status'])
-    return new_sheet
-
-# Process rows and create tabs
+# Process rows and add data to "Old files" sheet
 def process_rows(spreadsheet):
-    sheet = spreadsheet.get_worksheet(0)  # Access the first sheet
-    rows = sheet.get_all_records()  # Fetch all rows
+    page_content = spreadsheet.worksheet('Page Content')  # First sheet
+    old_files = spreadsheet.worksheet('Old Files')  # Access "Old Files" sheet
+    rows = page_content.get_all_records()  # Fetch all rows
 
-    for row in rows:
+    for row_idx, row in enumerate(rows, start=2):  # start=2 because Google Sheets is 1-indexed
         if row['Extract Old PDFs'] == 'TRUE':  # If checkbox is checked
             post_title = row['post_title']
-            existing_tabs = [ws.title for ws in spreadsheet.worksheets()]
-
-            if post_title in existing_tabs:
-                print(f"Tab already exists for {post_title}. Skipping.")
-                continue  # Exit the loop if the tab already exists
-
             url = row['URL']
+            processed = (row['Processed'] == 'Yes')
+
+            if processed:
+                print(f"{post_title} already processed.")
+                continue
+
             print(f"Processing: {post_title}")
             
-            # Create a new tab for the post_title
-            new_sheet = create_new_tab(spreadsheet, post_title)
-            
-            # Add links to sheet
-            old_pdf_links = get_old(url)
-            for old_link in old_pdf_links:
-                new_sheet.append_row([old_link, get_new_link(old_link), 'Pending'])
+            # Update the "Processed" column (Column 8, which is column H)
+            page_content.update_cell(row_idx, 8, 'Yes')
 
-# Find the PDF links with sites/default/files
+            # Add links to "Old files" sheet
+            old_file_links = get_old(url)
+            for old_link in old_file_links:
+                file_type = 'PDF' if old_link.endswith('.pdf') else 'Image'  # Identify type
+
+                # Append the row with clickable links
+                old_files.append_row([post_title, url, old_link, file_type, 'Pending'])
+
+
+# Find the file links with sites/default/files using Selenium
 def get_old(url):
     # Set up Selenium options for headless browser
     chrome_options = Options()
@@ -78,39 +76,19 @@ def get_old(url):
     for link in soup.find_all('a', href=True):
         href = link['href']
         # Filter by sites/default/files
-        if 'sites/default/files' in href and href.endswith('.pdf'):
+        if 'sites/default/files' in href:
             full_link = f"https://law.stanford.edu/wp-content/uploads{href}"
             links.append(full_link)
     
+    # Find all resources with src (like images)
     for tag in soup.find_all(src=True):
         src = tag['src']
         # Filter by sites/default/files
         if 'sites/default/files' in src:
-            # Prepend the base URL before the src link
             full_link = f"{src}"
             links.append(full_link)
     
     return links
-
-def get_new_link(old_link):
-        # Extract the components of the URL
-    url_parts = old_link.split('/')
-
-    # Extract the filename and the date portion
-    old_filename = url_parts[-1]
-    date_str = url_parts[-5]  # The "762426" part from the URL
-    old_filename = urllib.parse.unquote(old_filename)  # Decode the URL-encoded file name
-    
-    # Assuming the date is in YYYY-MM format (example: "2015-05" is in '762426' format)
-    year = date_str[:4]
-    month = date_str[4:6]
-
-    # Replace spaces (%20) with dashes in the filename
-    new_filename = old_filename.replace("%20", "-")
-
-    # Construct the new URL
-    new_link = f"https://law.stanford.edu/wp-content/uploads/{year}/{month}/{new_filename}"
-    return new_link
 
 # Main execution
 if __name__ == '__main__':
