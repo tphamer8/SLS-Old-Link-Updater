@@ -1,7 +1,12 @@
-import os
-import requests
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+import time
+import os
 
 # Authenticate with Google Sheets
 def authenticate_google_sheet():
@@ -15,41 +20,72 @@ def open_spreadsheet(client, spreadsheet_name):
     spreadsheet = client.open(spreadsheet_name)
     return spreadsheet
 
-# Download the file from the given URL
-def download_file(url, save_path):
-    response = requests.get(url)
+# Configure Selenium WebDriver for downloading files
+def create_selenium_driver(download_dir):
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run in headless mode (no UI)
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
     
-    # Ensure the request was successful
-    if response.status_code == 200:
-        # Write the content to a local file
-        with open(save_path, 'wb') as file:
-            file.write(response.content)
-        print(f"Downloaded: {save_path}")
-    else:
-        print(f"Failed to download {url}. Status code: {response.status_code}")
+    # Set Chrome preferences to auto-download files to a specific directory
+    prefs = {
+        "download.default_directory": download_dir,  # Path to the directory to save downloaded files
+        "download.prompt_for_download": False,  # Disable download prompt
+        "directory_upgrade": True
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
 
-# Process rows and download files
-def process_and_download_files(spreadsheet):
+def create_selenium_driver(download_dir):
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Run in headless mode (no UI)
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--no-sandbox")
+    
+    # Set Chrome preferences to auto-download files to a specific directory
+    prefs = {
+        "download.default_directory": download_dir,  # Path to the directory to save downloaded files
+        "download.prompt_for_download": False,  # Disable download prompt
+        "directory_upgrade": True
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
+
+def download_file_selenium(url, download_dir):
+    driver = create_selenium_driver(download_dir)
+    driver.get(url)
+    time.sleep(5)
+    driver.quit()
+
+# Process rows and add data to "Old files" sheet
+def process_rows(spreadsheet):
     old_files = spreadsheet.worksheet('Old Files')  # Access "Old Files" sheet
     rows = old_files.get_all_records()  # Fetch all rows
 
-    for row in rows:
-        url = row['URL']  # Get the file URL from the "Old Files" sheet
-        file_name = url.split("/")[-1]  # Get the file name from the URL (assuming it's the last part of the URL)
-        
-        # Specify where to save the downloaded file
-        save_path = os.path.join('downloads', file_name)
+    download_dir = '/Users/tpham/Documents/Stanford Webmaster Files/File Reuploads/Automated Downloads'
 
-        # Ensure the 'downloads' directory exists
-        if not os.path.exists('downloads'):
-            os.makedirs('downloads')
+    for row_idx, row in enumerate(rows, start=2):  # start=2 because Google Sheets is 1-indexed
+        if row['Type'] == 'PDF' and row['Status'] == 'Pending' :  # check if pdf has been downloaded
+            url = row['URL']
+            file_name = url.split("/")[-1]
+            print(f"Downloading: {url}")
+            
+            # Update the "Status" column
+            old_files.update_cell(row_idx, 5, 'Downloaded')
 
-        # Download the file
-        download_file(url, save_path)
+            # Specify where to save the downloaded file
+            save_path = os.path.join(download_dir, file_name)
+
+            # Download the file
+            download_file_selenium(url, download_dir)
 
 # Main execution
 if __name__ == '__main__':
     client = authenticate_google_sheet()
     spreadsheet_name = 'Auto Old Link Updater'  # Replace with your spreadsheet name
     spreadsheet = open_spreadsheet(client, spreadsheet_name)
-    process_and_download_files(spreadsheet)
+    process_rows(spreadsheet)
