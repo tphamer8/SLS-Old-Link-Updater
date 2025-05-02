@@ -106,7 +106,7 @@ def downloadPendingPDFS(spreadsheet):
     for row_idx, row in enumerate(rows, start=2):
         if row['Type'] == 'PDF' and row['Status'] == 'Pending':
             url = row['URL']
-            filename = getFileName(url)
+            filename = os.path.join(download_dir, getFileName(url))
             try:
                 response = requests.get(url, headers={
                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
@@ -117,11 +117,14 @@ def downloadPendingPDFS(spreadsheet):
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
                     print(f"Downloaded: {filename}")
+                    old_files.update_cell(row_idx, 5, 'Downloaded')
                 else:
                     print(f"Failed to download. Status code: {response.status_code}")
+                    old_files.update_cell(row_idx, 5, 'Failed')
 
             except Exception as e:
                 print(f"Error downloading: {e}")
+            
 
 def getFileName(url):
     path = urlparse(url).path
