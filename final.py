@@ -9,6 +9,7 @@ import time
 
 import os
 import requests
+import re
 from urllib.parse import unquote, urlparse
 
 # Authenticate with Google Sheets
@@ -126,6 +127,30 @@ def downloadPendingPDFS(spreadsheet):
                 print(f"Error downloading: {e}")
             
 
+def fix_links(spreadsheet):
+    old_files = spreadsheet.worksheet('Old Files')  # Access "Old Files" sheet
+    rows = old_files.get_all_records()
+
+    # Get headers to determine column indices
+    headers = old_files.row_values(1)
+    url_col = headers.index('URL') + 1
+    status_col = headers.index('Status') + 1
+
+    for row_idx, row in enumerate(rows, start=2):  # Start at 2 because row 1 is headers
+        if row['Type'] == 'PDF' and row['Status'] == 'Failed':
+            url = row['URL']
+            # Remove the first duplicated 'https://' if present
+            fixed_url = re.sub(r'https://.*?(?=https://)', '', url)
+
+            if fixed_url != url:
+                # Update the URL and Status to 'Pending'
+                old_files.update_cell(row_idx, url_col, fixed_url)
+                old_files.update_cell(row_idx, status_col, 'Pending')
+                print(f"Row {row_idx} updated:\n  Original URL: {url}\n  Fixed URL:    {fixed_url}")
+
+
+
+
 def getFileName(url):
     path = urlparse(url).path
     filename = os.path.basename(path)
@@ -136,5 +161,6 @@ if __name__ == '__main__':
     client = authenticate_google_sheet()
     spreadsheet_name = 'Auto Old Link Updater'  # Replace with your spreadsheet name
     spreadsheet = open_spreadsheet(client, spreadsheet_name)
-    process_rows(spreadsheet)
-    downloadPendingPDFS(spreadsheet)
+    # process_rows(spreadsheet)
+    # downloadPendingPDFS(spreadsheet)
+    fix_links(spreadsheet)
