@@ -126,27 +126,30 @@ def downloadPendingPDFS(spreadsheet):
             except Exception as e:
                 print(f"Error downloading: {e}")
             
-
 def fix_links(spreadsheet):
-    old_files = spreadsheet.worksheet('Old Files')  # Access "Old Files" sheet
+    old_files = spreadsheet.worksheet('Old Files')
     rows = old_files.get_all_records()
 
-    # Get headers to determine column indices
     headers = old_files.row_values(1)
     url_col = headers.index('URL') + 1
     status_col = headers.index('Status') + 1
 
-    for row_idx, row in enumerate(rows, start=2):  # Start at 2 because row 1 is headers
+    for row_idx, row in enumerate(rows, start=2):
         if row['Type'] == 'PDF' and row['Status'] == 'Failed':
             url = row['URL']
-            # Remove the first duplicated 'https://' if present
-            fixed_url = re.sub(r'https://.*?(?=https://)', '', url)
+            print("checking link " + url)
 
-            if fixed_url != url:
-                # Update the URL and Status to 'Pending'
+            # Look for a second URL scheme (http:// or https://) starting after position 10
+            match = re.search(r'(https?://)', url[10:])
+            if match:
+                idx = match.start() + 10  # Adjust since we searched from index 10
+                fixed_url = url[idx:]
+                # print("fixing link " + url)
+
                 old_files.update_cell(row_idx, url_col, fixed_url)
                 old_files.update_cell(row_idx, status_col, 'Pending')
                 print(f"Row {row_idx} updated:\n  Original URL: {url}\n  Fixed URL:    {fixed_url}")
+
 
 
 
